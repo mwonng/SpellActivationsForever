@@ -47,3 +47,11 @@ The logic runs outside the game against a small WoW API stub:
 pip install lupa
 python tools/test.py
 ```
+
+### Releasing
+
+Bump the CHANGELOG section and the toc version, commit, tag (`git tag v0.1.0 && git push origin master --tags`).
+The Release workflow attaches `SpellActivationsForever-0.1.0.zip` (top-level `SpellActivationsForever/`
+folder) to the GitHub release, and CurseForge packages the tag through its automatic packaging (`.pkgmeta`)
+once the repository has the webhook (`https://www.curseforge.com/api/projects/<projectID>/package?token=<token>`,
+repository Settings → Webhooks). `python tools/package.py` builds the same zip locally into `dist/`.

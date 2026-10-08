@@ -1,0 +1,21 @@
+# CurseForge automatic packaging (https://support.curseforge.com/support/solutions/articles/9000197281).
+# A GitHub webhook (repository Settings -> Webhooks) pointing at
+#   https://www.curseforge.com/api/projects/<projectID>/package?token=<API token>
+# makes CurseForge build a file from every push: a tagged commit becomes a release
+# (a tag containing "alpha" or "beta" an alpha/beta file), untagged commits an alpha when
+# "package all commits" is on. The version shown on CurseForge is the tag name (v0.1.3).
+#
+# Dot-files (.github, .gitignore, this file) are never packaged; CLAUDE.md is not in the repository.
+
+package-as: SpellActivationsForever
+
+enable-nolib-creation: no
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - tools
+  - dist
+  - "*.bak"

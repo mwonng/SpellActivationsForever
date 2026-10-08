@@ -3,7 +3,7 @@
 ## Category: Combat
 ## Notes: Lights up action buttons for reactive abilities (Overpower, Revenge, Riposte, Execute, Shadow Trance...) in WoW Forever
 ## Author: Michael
-## Version: 0.0.1
+## Version: 0.1.0
 ## SavedVariables: SpellActivationsForeverDB
 
 spells.lua

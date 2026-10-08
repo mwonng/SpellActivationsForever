@@ -1,0 +1,4 @@
+*.bak
+CLAUDE.md
+dist/
+__pycache__/

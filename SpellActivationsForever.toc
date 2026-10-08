@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: SpellActivationsForever
+## Category: Combat
+## Notes: Lights up action buttons for reactive abilities (Overpower, Revenge, Riposte, Execute, Shadow Trance...) in WoW Forever
+## Author: Michael
+## Version: 0.0.1
+## SavedVariables: SpellActivationsForeverDB
+
+spells.lua
+core.lua
+options.lua

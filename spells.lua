@@ -44,7 +44,7 @@ ns.SPELLS = {
     },
 }
 
--- Localized creature type names (UnitCreatureType returns the client's language), from ClassicSpellActivations.
+-- Localized creature type names (UnitCreatureType returns the client's language; the game has no API for them).
 ns.CREATURE_TYPES = {
     Undead = { enUS = "Undead", deDE = "Untoter", esES = "No-muerto", esMX = "No-muerto", frFR = "Mort-vivant",
                itIT = "Non Morto", ptBR = "Renegado", ruRU = "Нежить", koKR = "언데드", zhCN = "亡灵", zhTW = "不死族" },

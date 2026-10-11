@@ -1,6 +1,6 @@
 -- SpellActivationsForever: lights up the action buttons of reactive abilities, the way the game's own
--- spell alerts do, for WoW Forever. A port of the idea of ClassicSpellActivations (d87) without the
--- combat log, which addons cannot read in this client.
+-- spell alerts do, for WoW Forever. Written from scratch for this client, where addons cannot read the
+-- combat log; the idea is the one ClassicSpellActivations (d87) implements on Classic Era.
 local ADDON, ns = ...
 
 local f = CreateFrame("Frame")

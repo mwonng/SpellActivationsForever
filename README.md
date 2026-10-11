@@ -1,7 +1,7 @@
 # SpellActivationsForever
 
-Lights up the action buttons of reactive abilities with the game's own spell alert glow. An addon for
-**WoW: Forever**, after the idea of ClassicSpellActivations by d87.
+Lights up the action buttons of reactive abilities with the game's own spell alert glow. An addon
+written for **WoW: Forever**.
 
 | Class   | Abilities                                                   |
 |---------|-------------------------------------------------------------|
@@ -13,7 +13,8 @@ Lights up the action buttons of reactive abilities with the game's own spell ale
 
 ## How it detects the moment
 
-Addons cannot read the combat log in WoW: Forever, which is what ClassicSpellActivations used. Instead:
+Addons cannot read the combat log in WoW: Forever, which is what addons of this kind use on Classic
+Era. Instead:
 
 - **Usable state** (default): the server marks a reactive ability usable only while its condition holds
   (that is why the button is dimmed until a dodge happens). The glow follows that flag exactly, and goes off
@@ -30,6 +31,17 @@ target is undead or demon and the spell is off cooldown, Shadow Bolt while Shado
 
 The glow is the game's `ActionButtonSpellAlertManager` animation on the default action bars (including
 macros that cast the ability) and on Bartender/Dominos buttons through LibActionButton.
+
+## Relation to other addons
+
+[ClassicSpellActivations](https://www.curseforge.com/wow/addons/classicspellactivations) by d87 does the
+same job on Classic Era, and is where the idea comes from. SpellActivationsForever is an independent
+implementation written from scratch and shares no code with it: it cannot use the combat log (forbidden
+for addons in WoW: Forever), so it detects the moment through the server's usable state and the client's
+`UNIT_COMBAT` events, draws the glow with the game's spell alert manager instead of hooking the old
+overlay functions, finds spells by name so changed spell IDs in Forever still work, and has its own
+settings panel, slash commands and offline tests. The only data in common is the list of reactive
+abilities, which is a fact of the game.
 
 ## Settings
 

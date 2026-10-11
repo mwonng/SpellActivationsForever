@@ -86,7 +86,7 @@ Paragraph("Lights up the action buttons of reactive abilities with the game's ow
 Header("Detection of reactive abilities")
 RadioRow({
     { key = "usable", text = "Usable state", tip = "The server marks Overpower, Revenge and the like usable only while their condition holds (the button is dimmed otherwise). Exact, no guessing; the glow goes off when the ability is used." },
-    { key = "events", text = "Combat events", tip = "A dodge, parry or block reported for you or your target opens a 5 second window, like ClassicSpellActivations did with the combat log. Also counts dodges of your group members' attacks." },
+    { key = "events", text = "Combat events", tip = "A dodge, parry or block reported for you or your target opens a 5 second window, the way combat-log based addons do on Classic Era. Also counts dodges of your group members' attacks." },
     { key = "both", text = "Either", tip = "Glow when either source says so." },
 }, "mode")
 CheckRow({

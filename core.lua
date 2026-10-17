@@ -249,6 +249,7 @@ local Manager = ActionButtonSpellAlertManager
 
 local function SpellIDOfButton(btn)
     if btn.GetSpellId then return btn:GetSpellId() end -- LibActionButton (Bartender, Dominos)
+    if btn.GetSpellID then return btn:GetSpellID() end -- Cooldown Manager item (aura/override aware)
     local action = btn.action
     if not action then return end
     local kind, id, sub = GetActionInfo(action)
@@ -300,6 +301,33 @@ local function Register(btn)
     if btn.UpdateSpellAlert then
         hooksecurefunc(btn, "UpdateSpellAlert", UpdateButton) -- the game decides, then this addon adds its glow
     end
+    if btn.RefreshOverlayGlow then
+        -- Cooldown Manager items: the game refreshes the glow on data refresh and when the item changes spell
+        hooksecurefunc(btn, "RefreshOverlayGlow", UpdateButton)
+    end
+end
+
+-- The Cooldown Manager's Essential and Utility bars (Blizzard_CooldownViewer) draw the same alert on their
+-- item frames. The frames come from a pool: hook the viewer's acquire so new or reused items are tracked.
+local VIEWERS = { "EssentialCooldownViewer", "UtilityCooldownViewer" }
+local hookedViewers = {}
+local function SetupCooldownViewers()
+    local found = 0
+    for _, name in ipairs(VIEWERS) do
+        local viewer = _G[name]
+        if viewer then found = found + 1 end
+        if viewer and not hookedViewers[viewer] then
+            hookedViewers[viewer] = true
+            if type(viewer.OnAcquireItemFrame) == "function" then
+                hooksecurefunc(viewer, "OnAcquireItemFrame", function(_, item) Register(item) UpdateButton(item) end)
+            end
+            local pool = viewer.itemFramePool
+            if pool and pool.EnumerateActive then
+                for item in pool:EnumerateActive() do Register(item) UpdateButton(item) end
+            end
+        end
+    end
+    return found == #VIEWERS
 end
 
 local function SetupButtons()
@@ -313,6 +341,7 @@ local function SetupButtons()
         end
         LAB:RegisterCallback("OnButtonUpdate", function(_, btn) Register(btn) UpdateButton(btn) end)
     end
+    ns.viewersHooked = SetupCooldownViewers()
     if Manager and not ns.hookedManager then
         ns.hookedManager = true
         -- the game hides an alert on SPELL_ACTIVATION_OVERLAY_GLOW_HIDE without going through UpdateSpellAlert
@@ -329,6 +358,7 @@ end
 local function Setup()
     Resolve()
     f:UnregisterAllEvents()
+    if not ns.viewersHooked then f:RegisterEvent("ADDON_LOADED") end -- Blizzard_CooldownViewer may load later
     f:RegisterEvent("SPELLS_CHANGED")
     f:RegisterEvent("PLAYER_ENTERING_WORLD")
     local wantUsable, wantCombat, wantHealth, wantAura, wantCreature = false, false, false, false, false
@@ -363,14 +393,19 @@ end
 
 f:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
-        if ... ~= ADDON then return end
+        local name = ...
+        if name == "Blizzard_CooldownViewer" then
+            ns.viewersHooked = SetupCooldownViewers()
+            if ns.viewersHooked then self:UnregisterEvent("ADDON_LOADED") end
+            return
+        end
+        if name ~= ADDON then return end
         SpellActivationsForeverDB = SpellActivationsForeverDB or {}
         db = SpellActivationsForeverDB
         for k, v in pairs(DEFAULTS) do
             if db[k] == nil then db[k] = type(v) == "table" and {} or v end
         end
         ns.db = db
-        self:UnregisterEvent("ADDON_LOADED")
         self:RegisterEvent("PLAYER_LOGIN")
     elseif event == "PLAYER_LOGIN" then
         SetupButtons()
@@ -439,6 +474,7 @@ ns.internals = {
     db = function() return db end,
     buttons = buttons,
     glowing = glowing,
+    SetupCooldownViewers = SetupCooldownViewers,
     byName = byName,
     KeyForButton = KeyForButton,
     CheckUsable = CheckUsable,

@@ -30,7 +30,8 @@ Execute and Hammer of Wrath additionally glow while the target is below 20% heal
 target is undead or demon and the spell is off cooldown, Shadow Bolt while Shadow Trance is on you.
 
 The glow is the game's `ActionButtonSpellAlertManager` animation on the default action bars (including
-macros that cast the ability) and on Bartender/Dominos buttons through LibActionButton.
+macros that cast the ability), on Bartender/Dominos buttons through LibActionButton, and on the icons of
+the game's Cooldown Manager (Essential and Utility bars).
 
 ## Relation to other addons
 

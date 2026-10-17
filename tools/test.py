@@ -250,6 +250,106 @@ class Buttons(Base):
         self.assertIn("Execute", text)
 
 
+class CooldownManager(Base):
+    """The Cooldown Manager's Essential/Utility item frames glow like the action buttons."""
+
+    def viewer(self, name="EssentialCooldownViewer"):
+        return self.G[name]
+
+    def add_item(self, spell_id, viewer="EssentialCooldownViewer"):
+        v = self.viewer(viewer)
+        return v.AddItem(v, spell_id)
+
+    def lit(self, item):
+        return bool(self.stub.alerts[item])
+
+    def test_item_glows_with_the_ability(self):
+        item = self.add_item(11585)
+        utility = self.add_item(11601, "UtilityCooldownViewer")
+        self.assertFalse(self.lit(item))
+        self.usable("Overpower", True)
+        self.assertTrue(self.lit(item))
+        self.assertFalse(self.lit(utility))
+        self.usable("Revenge", True)
+        self.assertTrue(self.lit(utility))
+        self.usable("Overpower", False)
+        self.assertFalse(self.lit(item))
+        self.assertTrue(self.lit(utility))
+
+    def test_item_present_before_login_is_found(self):
+        # frames the viewer acquired before PLAYER_LOGIN are picked up from the pool, not only new ones
+        self.extra_setup = lambda stub: stub.viewers.EssentialCooldownViewer.AddItem(stub.viewers.EssentialCooldownViewer, 11585)
+        self.setUp()
+        first = self.lua.eval("function(pool) for item in pool.EnumerateActive() do return item end end")
+        item = first(self.viewer().itemFramePool)
+        self.usable("Overpower", True)
+        self.assertTrue(self.lit(item))
+
+    def test_games_refresh_is_reapplied_without_birth(self):
+        item = self.add_item(11585)
+        self.usable("Overpower", True)
+        self.stub.alertCalls = self.lua.table()
+        item.RefreshData(item)  # the game's RefreshData hides (spell not overlayed), the hook re-applies
+        self.assertTrue(self.lit(item))
+        calls = list(self.stub.alertCalls.values())
+        self.assertEqual([c[1] for c in calls], ["hide", "show"])
+        self.assertTrue(calls[-1][3], "re-apply skips the birth animation")
+
+    def test_item_changing_spell_moves_the_glow(self):
+        item = self.add_item(11585)
+        self.usable("Overpower", True)
+        self.assertTrue(self.lit(item))
+        item.SetCooldownSpell(item, 772)  # the item now shows Rend
+        self.assertFalse(self.lit(item))
+        item.SetCooldownSpell(item, 7384)  # back to Overpower (rank 1)
+        self.assertTrue(self.lit(item))
+
+    def test_pool_reuse_after_layout_refresh(self):
+        item = self.add_item(11585)
+        item.tag = "first"
+        self.usable("Overpower", True)
+        self.viewer().itemFramePool.ReleaseAll()
+        reused = self.add_item(11601)  # the same frame comes back, now for Revenge
+        self.assertEqual(reused.tag, "first")
+        self.assertFalse(self.lit(reused))
+        self.usable("Revenge", True)
+        self.assertTrue(self.lit(reused))
+
+    def test_games_own_glow_is_kept_when_ours_ends(self):
+        self.stub.overlayed[11585] = True
+        item = self.add_item(11585)
+        self.assertTrue(self.lit(item))
+        self.usable("Overpower", True)
+        self.usable("Overpower", False)
+        self.assertTrue(self.lit(item))
+
+    def test_secret_spell_id_is_not_an_error(self):
+        item = self.add_item(self.stub.Secret("spell"))
+        self.usable("Overpower", True)
+        self.assertFalse(self.lit(item))
+
+    def test_action_buttons_and_items_glow_together(self):
+        self.put_spell(1, 11585)
+        item = self.add_item(11585)
+        self.slash("test 2")
+        self.assertTrue(self.glowing(1) and self.lit(item))
+        self.stub.Advance(2.1)
+        self.assertFalse(self.glowing(1) or self.lit(item))
+
+    def test_viewer_loading_after_login_is_hooked(self):
+        # Blizzard_CooldownViewer is not there at login and loads afterwards
+        self.extra_setup = lambda stub: stub.RemoveCooldownViewers()
+        self.setUp()
+        self.assertIsNone(self.G.EssentialCooldownViewer)
+        self.assertFalse(bool(self.ns.viewersHooked))
+        self.stub.CreateCooldownViewers()
+        self.stub.Fire("ADDON_LOADED", "Blizzard_CooldownViewer")
+        self.assertTrue(bool(self.ns.viewersHooked))
+        item = self.add_item(11585)
+        self.usable("Overpower", True)
+        self.assertTrue(self.lit(item))
+
+
 class Paladin(Base):
     cls = "PALADIN"
     known = (10314, 24275)

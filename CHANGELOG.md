@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The glow also lights the ability's icon in the game's Cooldown Manager (Essential and Utility bars).
+
 ## 0.1.0 — 2026-10-09
 
 - First version: spell alert glow on the action buttons of Overpower, Revenge, Execute, Riposte,

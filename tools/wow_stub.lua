@@ -19,6 +19,7 @@ local stub = {
     timers = {},
     alerts = {},     -- [button] = true while ActionButtonSpellAlertManager shows an alert
     alertCalls = {}, -- { "show"/"hide", button, skipBirth }
+    viewers = {},    -- [name] = Cooldown Manager viewer frame (also a global)
 }
 
 local SPELL_NAMES = {
@@ -169,6 +170,74 @@ for i = 1, 12 do
     b.action = 60 + i
     b.UpdateSpellAlert = ButtonMixin.UpdateSpellAlert
 end
+
+-- The Cooldown Manager (Blizzard_CooldownViewer): the Essential/Utility viewers acquire item frames from a
+-- pool, OnAcquireItemFrame runs per acquire, SetCooldownID -> OnCooldownIDSet -> RefreshOverlayGlow decides
+-- the game's own glow from IsSpellOverlayed (RefreshData does the same). Items expose the spell as GetSpellID.
+local ItemMixin = {}
+function ItemMixin:GetSpellID() return self.spellID end
+function ItemMixin:RefreshOverlayGlow(desiredShowStateFromEvent)
+    local needShow = desiredShowStateFromEvent
+    if needShow == nil then
+        local id = self:GetSpellID()
+        needShow = id and C_SpellActivationOverlay.IsSpellOverlayed(id) or false
+    end
+    if needShow then
+        ActionButtonSpellAlertManager:ShowAlert(self, desiredShowStateFromEvent == nil)
+    else
+        ActionButtonSpellAlertManager:HideAlert(self)
+    end
+end
+function ItemMixin:RefreshData() self:RefreshOverlayGlow() end
+function ItemMixin:SetCooldownSpell(spellID) -- stands in for SetCooldownID + OnCooldownIDSet
+    self.spellID = spellID
+    self:RefreshOverlayGlow()
+end
+function ItemMixin:ResetCooldownData() self.spellID = nil end
+
+local VIEWER_NAMES = { "EssentialCooldownViewer", "UtilityCooldownViewer" }
+local function MakeViewer(name)
+    local viewer = CreateFrame("Frame", name, UIParent)
+    stub.viewers[name] = viewer
+    local active, inactive = {}, {}
+    viewer.itemFramePool = {
+        Acquire = function()
+            local item = table.remove(inactive)
+            if not item then
+                item = CreateFrame("Frame", nil, viewer)
+                for k, fn in pairs(ItemMixin) do item[k] = fn end
+            end
+            active[item] = true
+            item:Show()
+            return item
+        end,
+        ReleaseAll = function()
+            for item in pairs(active) do
+                item:Hide()
+                item:ResetCooldownData()
+                inactive[#inactive + 1] = item
+                active[item] = nil
+            end
+        end,
+        EnumerateActive = function() return pairs(active) end,
+    }
+    function viewer:OnAcquireItemFrame(item) item.viewer = self end
+    -- test helper: what the game's RefreshLayout does for one item showing spellID
+    function viewer:AddItem(spellID)
+        local item = self.itemFramePool:Acquire()
+        self:OnAcquireItemFrame(item)
+        item:SetCooldownSpell(spellID)
+        return item
+    end
+    return viewer
+end
+function stub.CreateCooldownViewers()
+    for _, name in ipairs(VIEWER_NAMES) do MakeViewer(name) end
+end
+function stub.RemoveCooldownViewers() -- a client where Blizzard_CooldownViewer has not loaded yet
+    for _, name in ipairs(VIEWER_NAMES) do _G[name] = nil end
+end
+stub.CreateCooldownViewers()
 
 function hooksecurefunc(tbl, name, hook)
     if type(tbl) == "string" then tbl, name, hook = _G, tbl, name end

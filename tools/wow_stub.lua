@@ -18,7 +18,7 @@ local stub = {
     frames = {},
     timers = {},
     alerts = {},     -- [button] = true while ActionButtonSpellAlertManager shows an alert
-    alertCalls = {}, -- { "show"/"hide", button, skipBirth }
+    alertCalls = {}, -- { "show"/"hide", button, skipBirth, fromGame }
     viewers = {},    -- [name] = Cooldown Manager viewer frame (also a global)
 }
 
@@ -93,6 +93,19 @@ function Frame:HookScript(k, fn)
 end
 function Frame:CreateFontString() return setmetatable({}, Region) end
 function Frame:CreateTexture() return setmetatable({}, Region) end
+function Frame:GetFrameLevel() return self.level or 1 end
+function Frame:SetFrameLevel(l) self.level = l end
+function Region:SetTexture(t) self.texture = t end
+function Region:SetTexCoord() end
+function Region:SetAtlas(a) self.atlas = a end
+
+-- Animation groups as ActionButtonSpellAlertTemplate has them
+local Anim = {}
+Anim.__index = Anim
+function Anim:Play() self.playing = true if self.onFinished then self.onFinished() end end
+function Anim:Stop() self.playing = false end
+function Anim:IsPlaying() return self.playing == true end
+function Anim:SetScript(k, fn) if k == "OnFinished" then self.onFinished = fn end end
 function Frame:GetChildren() return unpack(self.children) end
 function Frame:GetDebugName() return self.name or "frame" end
 
@@ -100,6 +113,13 @@ function CreateFrame(kind, name, parent, template)
     local f = setmetatable({ kind = kind, name = name, parent = parent, template = template,
         events = {}, scripts = {}, children = {} }, Frame)
     if parent and parent.children then parent.children[#parent.children + 1] = f end
+    if template == "ActionButtonSpellAlertTemplate" then
+        f.shown = false
+        f.ProcStartFlipbook, f.ProcLoopFlipbook = f:CreateTexture(), f:CreateTexture()
+        f.ProcLoop = setmetatable({}, Anim)
+        f.ProcStartAnim = setmetatable({}, Anim)
+        f.ProcStartAnim:SetScript("OnFinished", function() f.ProcLoop:Play() end)
+    end
     if name then _G[name] = f end
     stub.frames[#stub.frames + 1] = f
     return f
@@ -132,12 +152,12 @@ ActionButtonSpellAlertManager = {}
 function ActionButtonSpellAlertManager:ShowAlert(btn, skipBirth)
     if stub.alerts[btn] then return end
     stub.alerts[btn] = true
-    stub.alertCalls[#stub.alertCalls + 1] = { "show", btn, skipBirth and true or false }
+    stub.alertCalls[#stub.alertCalls + 1] = { "show", btn, skipBirth and true or false, stub.inGameCode or false }
 end
 function ActionButtonSpellAlertManager:HideAlert(btn)
     if not stub.alerts[btn] then return end
     stub.alerts[btn] = nil
-    stub.alertCalls[#stub.alertCalls + 1] = { "hide", btn, false }
+    stub.alertCalls[#stub.alertCalls + 1] = { "hide", btn, false, stub.inGameCode or false }
 end
 function ActionButtonSpellAlertManager:HasAlert(btn) return stub.alerts[btn] == true end
 
@@ -182,11 +202,13 @@ function ItemMixin:RefreshOverlayGlow(desiredShowStateFromEvent)
         local id = self:GetSpellID()
         needShow = id and C_SpellActivationOverlay.IsSpellOverlayed(id) or false
     end
+    stub.inGameCode = true -- the game's own (secure) call: allowed on items, unlike the addon's
     if needShow then
         ActionButtonSpellAlertManager:ShowAlert(self, desiredShowStateFromEvent == nil)
     else
         ActionButtonSpellAlertManager:HideAlert(self)
     end
+    stub.inGameCode = false
 end
 function ItemMixin:RefreshData() self:RefreshOverlayGlow() end
 function ItemMixin:SetCooldownSpell(spellID) -- stands in for SetCooldownID + OnCooldownIDSet
@@ -205,6 +227,7 @@ local function MakeViewer(name)
             local item = table.remove(inactive)
             if not item then
                 item = CreateFrame("Frame", nil, viewer)
+                item:SetSize(50, 50)
                 for k, fn in pairs(ItemMixin) do item[k] = fn end
             end
             active[item] = true

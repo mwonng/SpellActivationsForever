@@ -261,7 +261,14 @@ class CooldownManager(Base):
         return v.AddItem(v, spell_id)
 
     def lit(self, item):
-        return bool(self.stub.alerts[item])
+        # the addon's own alert frame on the item (the game's manager must never be used on items)
+        alert = self.ns.internals.ownAlerts[item]
+        return bool(alert) and bool(alert.IsShown(alert))
+
+    def tearDown(self):
+        for call in self.stub.alertCalls.values():
+            if call[2].RefreshOverlayGlow is not None:  # a Cooldown Manager item
+                self.assertTrue(call[4], "ActionButtonSpellAlertManager was called with an item from addon code")
 
     def test_item_glows_with_the_ability(self):
         item = self.add_item(11585)
@@ -285,15 +292,42 @@ class CooldownManager(Base):
         self.usable("Overpower", True)
         self.assertTrue(self.lit(item))
 
-    def test_games_refresh_is_reapplied_without_birth(self):
+    def test_games_refresh_leaves_our_glow(self):
         item = self.add_item(11585)
         self.usable("Overpower", True)
-        self.stub.alertCalls = self.lua.table()
-        item.RefreshData(item)  # the game's RefreshData hides (spell not overlayed), the hook re-applies
+        item.RefreshData(item)  # the game's RefreshData hides its own alert (spell not overlayed); ours stays
         self.assertTrue(self.lit(item))
-        calls = list(self.stub.alertCalls.values())
-        self.assertEqual([c[1] for c in calls], ["hide", "show"])
-        self.assertTrue(calls[-1][3], "re-apply skips the birth animation")
+        alert = self.ns.internals.ownAlerts[item]
+        self.assertTrue(alert.ProcLoop.IsPlaying(alert.ProcLoop), "loop animation runs after the birth one")
+        self.assertEqual(alert.template, "ActionButtonSpellAlertTemplate")
+        self.assertEqual((alert.w, alert.h), (70, 70))
+
+    def test_nothing_is_written_on_the_item(self):
+        # writes from addon code taint the item and break the viewer's secure code on secret values
+        self.stub.alertCalls = self.lua.table()
+        item = self.add_item(11585)
+        item.tag = "me"
+        keys_before = set(k for k in item.keys() if k != "viewer")
+        self.usable("Overpower", True)
+        self.assertTrue(self.lit(item))
+        self.usable("Overpower", False)
+        self.assertFalse(self.lit(item))
+        self.assertEqual(set(k for k in item.keys() if k != "viewer"), keys_before)
+        self.assertEqual(len(self.stub.alertCalls), 0, "the game's alert manager was not used on the item")
+        self.assertEqual(self.ns.internals.ownAlerts[item].parent.tag, "me")
+
+    def test_plain_texture_when_the_template_is_missing(self):
+        self.extra_setup = lambda stub: stub.viewers.EssentialCooldownViewer.AddItem(stub.viewers.EssentialCooldownViewer, 11585)
+        self.setUp()
+        broken = self.lua.eval("function(orig) return function(kind, name, parent, template) "
+                               "if template == 'ActionButtonSpellAlertTemplate' then error('unknown template') end "
+                               "return orig(kind, name, parent, template) end end")
+        self.G.CreateFrame = broken(self.G.CreateFrame)
+        first = self.lua.eval("function(pool) for item in pool.EnumerateActive() do return item end end")
+        item = first(self.viewer().itemFramePool)
+        self.usable("Overpower", True)
+        self.assertTrue(self.lit(item))
+        self.assertIsNone(self.ns.internals.ownAlerts[item].ProcStartAnim)
 
     def test_item_changing_spell_moves_the_glow(self):
         item = self.add_item(11585)
@@ -315,12 +349,15 @@ class CooldownManager(Base):
         self.usable("Revenge", True)
         self.assertTrue(self.lit(reused))
 
-    def test_games_own_glow_is_kept_when_ours_ends(self):
+    def test_games_own_glow_is_not_doubled(self):
         self.stub.overlayed[11585] = True
         item = self.add_item(11585)
-        self.assertTrue(self.lit(item))
+        self.assertTrue(bool(self.stub.alerts[item]), "the game's glow")
         self.usable("Overpower", True)
-        self.usable("Overpower", False)
+        self.assertFalse(self.lit(item), "no second glow on top of the game's")
+        self.stub.overlayed[11585] = None
+        item.RefreshOverlayGlow(item)  # the game takes its glow away; ours takes over
+        self.assertFalse(bool(self.stub.alerts[item]))
         self.assertTrue(self.lit(item))
 
     def test_secret_spell_id_is_not_an_error(self):

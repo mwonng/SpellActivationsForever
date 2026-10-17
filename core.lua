@@ -245,6 +245,8 @@ local BARS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightB
                "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button" }
 local buttons = {} -- button -> true
 local glowing = {} -- button -> key this addon lit it for
+local items = {}   -- Cooldown Manager item frame -> true (glow drawn by this addon, see OwnAlert)
+local ownAlerts = {} -- item -> this addon's alert frame
 local Manager = ActionButtonSpellAlertManager
 
 local function SpellIDOfButton(btn)
@@ -274,11 +276,62 @@ local function BlizzardWantsGlow(btn)
         and C_SpellActivationOverlay.IsSpellOverlayed(id) or false
 end
 
+-- Cooldown Manager items get an alert frame of their own. ActionButtonSpellAlertManager writes to the
+-- button (SpellActivationAlert) and to its own activeAlerts table; done from addon code that taints the item,
+-- and the viewer's secure code then fails on its secret values ("execution tainted by ..."). A child frame
+-- created here touches nothing on the item.
+local function OwnAlert(item)
+    local alert = ownAlerts[item]
+    if not alert then
+        local ok, frame = pcall(CreateFrame, "Frame", nil, item, "ActionButtonSpellAlertTemplate")
+        if ok and frame and frame.ProcStartAnim and frame.ProcLoop then
+            alert = frame
+        else -- no template in this client: the plain alert texture
+            alert = CreateFrame("Frame", nil, item)
+            local tex = alert:CreateTexture(nil, "OVERLAY")
+            tex:SetTexture("Interface\\SpellActivationOverlay\\IconAlert")
+            tex:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
+            tex:SetAllPoints()
+            alert:Hide()
+        end
+        alert:SetPoint("CENTER", item, "CENTER", 0, 0)
+        ownAlerts[item] = alert
+    end
+    return alert
+end
+
+local function ShowOwnAlert(item)
+    local alert = OwnAlert(item)
+    if alert:IsShown() then return end
+    local w, h = item:GetSize()
+    alert:SetSize(w * 1.4, h * 1.4)
+    alert:Show()
+    if alert.ProcStartAnim then alert.ProcStartAnim:Play() end -- OnFinished starts ProcLoop
+end
+
+local function HideOwnAlert(item)
+    local alert = ownAlerts[item]
+    if alert and alert:IsShown() then
+        alert:Hide()
+        if alert.ProcStartAnim then alert.ProcStartAnim:Stop() end
+    end
+end
+
 local function UpdateButton(btn)
-    if not Manager then return end
+    local own = items[btn]
+    if not own and not Manager then return end
     local key = KeyForButton(btn)
     local want = key and state[key] or false
-    if want then
+    if own then
+        if want and BlizzardWantsGlow(btn) then want = false end -- the game's own glow is already there
+        if want then
+            glowing[btn] = key
+            ShowOwnAlert(btn)
+        elseif glowing[btn] then
+            glowing[btn] = nil
+            HideOwnAlert(btn)
+        end
+    elseif want then
         if glowing[btn] ~= key then
             glowing[btn] = key
             Manager:ShowAlert(btn)
@@ -303,6 +356,7 @@ local function Register(btn)
     end
     if btn.RefreshOverlayGlow then
         -- Cooldown Manager items: the game refreshes the glow on data refresh and when the item changes spell
+        items[btn] = true
         hooksecurefunc(btn, "RefreshOverlayGlow", UpdateButton)
     end
 end
@@ -347,7 +401,7 @@ local function SetupButtons()
         -- the game hides an alert on SPELL_ACTIVATION_OVERLAY_GLOW_HIDE without going through UpdateSpellAlert
         hooksecurefunc(Manager, "HideAlert", function(_, btn)
             local key = glowing[btn]
-            if key and state[key] then Manager:ShowAlert(btn, true) end
+            if key and state[key] and not items[btn] then Manager:ShowAlert(btn, true) end
         end)
     end
 end
@@ -474,6 +528,8 @@ ns.internals = {
     db = function() return db end,
     buttons = buttons,
     glowing = glowing,
+    items = items,
+    ownAlerts = ownAlerts,
     SetupCooldownViewers = SetupCooldownViewers,
     byName = byName,
     KeyForButton = KeyForButton,

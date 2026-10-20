@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-21
 
 - The glow also lights the ability's icon in the game's Cooldown Manager (Essential and Utility bars).
+  The addon draws its own glow frame on the item instead of using the game's alert manager, so the
+  viewer's secure code is not tainted (no "attempt to compare a secret number value" errors).
 
 ## 0.1.0 — 2026-10-09
 

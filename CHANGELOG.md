@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Icon in the AddOns list.
+
 ## 0.2.0 — 2026-10-21
 
 - The glow also lights the ability's icon in the game's Cooldown Manager (Essential and Utility bars).

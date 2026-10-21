@@ -4,7 +4,7 @@
 ## Notes: Lights up action buttons for reactive abilities (Overpower, Revenge, Riposte, Execute, Shadow Trance...) in WoW Forever
 ## Author: Michael
 ## Version: 0.2.0
-## IconTexture: Interface\Icons\Spell_Holy_SurgeOfLight
+## IconTexture: Interface\Icons\INV_Sword_48
 ## SavedVariables: SpellActivationsForeverDB
 
 spells.lua

@@ -3,7 +3,7 @@
 ## Category: Combat
 ## Notes: Lights up action buttons for reactive abilities (Overpower, Revenge, Riposte, Execute, Shadow Trance...) in WoW Forever
 ## Author: Michael
-## Version: 0.2.0
+## Version: 0.2.1
 ## IconTexture: Interface\Icons\INV_Sword_48
 ## SavedVariables: SpellActivationsForeverDB
 

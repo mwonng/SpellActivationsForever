@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-10-22
 
-- Icon in the AddOns list.
+- Icon in the AddOns list (Execute's sword).
 
 ## 0.2.0 — 2026-10-21
 

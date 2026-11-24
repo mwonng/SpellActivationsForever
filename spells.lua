@@ -21,6 +21,7 @@ ns.SPELLS = {
           window = { unit = "player", events = { DODGE = true, PARRY = true, BLOCK = true }, duration = 5 } },
         { key = "Execute", name = "Execute", ids = { 20662, 20661, 20660, 20658, 5308 }, usable = true,
           health = { below = 0.2 } },
+        { key = "VictoryRush", name = "Victory Rush", ids = { 402927 }, usable = true },
     },
     ROGUE = {
         { key = "Riposte", name = "Riposte", ids = { 14251 }, usable = true,

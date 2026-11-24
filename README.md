@@ -5,7 +5,7 @@ written for **WoW: Forever**.
 
 | Class   | Abilities                                                   |
 |---------|-------------------------------------------------------------|
-| Warrior | Overpower, Revenge, Execute                                 |
+| Warrior | Overpower, Revenge, Execute, Victory Rush                   |
 | Rogue   | Riposte                                                     |
 | Hunter  | Counterattack, Mongoose Bite                                |
 | Paladin | Exorcism (undead or demon target), Hammer of Wrath          |
@@ -27,11 +27,13 @@ Era. Instead:
 - **Either**: both.
 
 Execute and Hammer of Wrath additionally glow while the target is below 20% health, Exorcism while the
-target is undead or demon and the spell is off cooldown, Shadow Bolt while Shadow Trance is on you.
+target is undead or demon, Shadow Bolt while Shadow Trance is on you. No ability glows while it is on a
+cooldown of its own.
 
-The glow is the game's `ActionButtonSpellAlertManager` animation on the default action bars (including
-macros that cast the ability), on Bartender/Dominos buttons through LibActionButton, and on the icons of
-the game's Cooldown Manager (Essential and Utility bars).
+The glow is the game's spell alert animation, drawn in a frame of the addon's own on the default action
+bars (including macros that cast the ability), on Bartender/Dominos buttons through LibActionButton, and
+on the icons of the game's Cooldown Manager (Essential and Utility bars). The addon never hands a button
+to the game's `ActionButtonSpellAlertManager`: that taints the action bars.
 
 ## Relation to other addons
 
@@ -39,8 +41,7 @@ the game's Cooldown Manager (Essential and Utility bars).
 same job on Classic Era, and is where the idea comes from. SpellActivationsForever is an independent
 implementation written from scratch and shares no code with it: it cannot use the combat log (forbidden
 for addons in WoW: Forever), so it detects the moment through the server's usable state and the client's
-`UNIT_COMBAT` events, draws the glow with the game's spell alert manager instead of hooking the old
-overlay functions, finds spells by name so changed spell IDs in Forever still work, and has its own
+`UNIT_COMBAT` events, draws the glow in its own frames instead of hooking the old overlay functions, finds spells by name so changed spell IDs in Forever still work, and has its own
 settings panel, slash commands and offline tests. The only data in common is the list of reactive
 abilities, which is a fact of the game.
 

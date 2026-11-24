@@ -88,6 +88,7 @@ local function IsActive(def)
     if forced and forced > GetTime() then return true end
     local s = sources[def.key]
     if not s then return false end
+    if s.cooldown then return false end
     local hasEvents = def.window or def.health or def.aura or def.creature
     if not def.usable then return EventsActive(s) end
     if not hasEvents then return s.usable or false end
@@ -105,7 +106,8 @@ local function Evaluate(def)
         local s = sources[def.key] or {}
         Debug(def.localName, new and "on" or "off",
             "usable=" .. tostring(s.usable), "window=" .. tostring(s.window ~= nil and s.window > GetTime()),
-            "aura=" .. tostring(s.aura), "health=" .. tostring(s.health), "creature=" .. tostring(s.creature))
+            "aura=" .. tostring(s.aura), "health=" .. tostring(s.health), "creature=" .. tostring(s.creature),
+            "cooldown=" .. tostring(s.cooldown))
         RefreshButtons()
     end
 end
@@ -203,15 +205,35 @@ local function CheckCreature()
                     if creatureNames[kind] == ctype then match = true end
                 end
             end
-            if match and C_Spell and C_Spell.GetSpellCooldown then
-                -- no glow while the spell is on a cooldown longer than the global one, when that is readable
-                local cd = C_Spell.GetSpellCooldown(def.localName)
-                local start, duration = cd and Plain(cd.startTime), cd and Plain(cd.duration)
-                if start and duration and duration > 1.5 and start + duration > GetTime() then match = false end
-            end
             sources[def.key].creature = match
             Evaluate(def)
         end
+    end
+end
+
+-- No glow while the ability is on a cooldown of its own. The global cooldown does not count: its duration
+-- is at most 1.5 s, and when the timings are hidden (combat) the isOnGCD flag tells it apart.
+local GLOBAL_COOLDOWN = 1.5
+local function CooldownLeft(def)
+    if not (C_Spell and C_Spell.GetSpellCooldown) then return false end
+    local cd = C_Spell.GetSpellCooldown(def.localName)
+    if not cd then return false end
+    local start, duration = Plain(cd.startTime), Plain(cd.duration)
+    if start and duration then
+        local left = start + duration - GetTime()
+        if duration > GLOBAL_COOLDOWN and left > 0 then return true, left end
+        return false
+    end
+    return Plain(cd.isActive) == true and Plain(cd.isOnGCD) == false
+end
+
+local function CheckCooldowns()
+    for _, def in ipairs(tracked) do
+        local s = sources[def.key]
+        local on, left = CooldownLeft(def)
+        if on and left and not s.cooldown then C_Timer.After(left + 0.05, CheckCooldowns) end
+        s.cooldown = on
+        Evaluate(def)
     end
 end
 
@@ -245,9 +267,7 @@ local BARS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBottomRightB
                "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button" }
 local buttons = {} -- button -> true
 local glowing = {} -- button -> key this addon lit it for
-local items = {}   -- Cooldown Manager item frame -> true (glow drawn by this addon, see OwnAlert)
-local ownAlerts = {} -- item -> this addon's alert frame
-local Manager = ActionButtonSpellAlertManager
+local ownAlerts = {} -- button -> this addon's alert frame
 
 local function SpellIDOfButton(btn)
     if btn.GetSpellId then return btn:GetSpellId() end -- LibActionButton (Bartender, Dominos)
@@ -276,10 +296,10 @@ local function BlizzardWantsGlow(btn)
         and C_SpellActivationOverlay.IsSpellOverlayed(id) or false
 end
 
--- Cooldown Manager items get an alert frame of their own. ActionButtonSpellAlertManager writes to the
--- button (SpellActivationAlert) and to its own activeAlerts table; done from addon code that taints the item,
--- and the viewer's secure code then fails on its secret values ("execution tainted by ..."). A child frame
--- created here touches nothing on the item.
+-- Every button gets an alert frame of this addon's own. ActionButtonSpellAlertManager writes to the button
+-- (SpellActivationAlert) and to its own activeAlerts table; done from addon code that taints the button, and
+-- the game's secure code then fails on its secret values ("execution tainted by ..."): action bars that
+-- disappear, lose their tooltips or cooldowns. A child frame created here touches nothing on the button.
 local function OwnAlert(item)
     local alert = ownAlerts[item]
     if not alert then
@@ -292,8 +312,8 @@ local function OwnAlert(item)
             tex:SetTexture("Interface\\SpellActivationOverlay\\IconAlert")
             tex:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
             tex:SetAllPoints()
-            alert:Hide()
         end
+        alert:Hide()
         alert:SetPoint("CENTER", item, "CENTER", 0, 0)
         ownAlerts[item] = alert
     end
@@ -318,29 +338,15 @@ local function HideOwnAlert(item)
 end
 
 local function UpdateButton(btn)
-    local own = items[btn]
-    if not own and not Manager then return end
     local key = KeyForButton(btn)
     local want = key and state[key] or false
-    if own then
-        if want and BlizzardWantsGlow(btn) then want = false end -- the game's own glow is already there
-        if want then
-            glowing[btn] = key
-            ShowOwnAlert(btn)
-        elseif glowing[btn] then
-            glowing[btn] = nil
-            HideOwnAlert(btn)
-        end
-    elseif want then
-        if glowing[btn] ~= key then
-            glowing[btn] = key
-            Manager:ShowAlert(btn)
-        else
-            Manager:ShowAlert(btn, true) -- re-apply after the game's own update hid it; no birth animation
-        end
+    if want and BlizzardWantsGlow(btn) then want = false end -- the game's own glow is already there
+    if want then
+        glowing[btn] = key
+        ShowOwnAlert(btn)
     elseif glowing[btn] then
         glowing[btn] = nil
-        if not BlizzardWantsGlow(btn) then Manager:HideAlert(btn) end
+        HideOwnAlert(btn)
     end
 end
 
@@ -356,7 +362,6 @@ local function Register(btn)
     end
     if btn.RefreshOverlayGlow then
         -- Cooldown Manager items: the game refreshes the glow on data refresh and when the item changes spell
-        items[btn] = true
         hooksecurefunc(btn, "RefreshOverlayGlow", UpdateButton)
     end
 end
@@ -396,14 +401,6 @@ local function SetupButtons()
         LAB:RegisterCallback("OnButtonUpdate", function(_, btn) Register(btn) UpdateButton(btn) end)
     end
     ns.viewersHooked = SetupCooldownViewers()
-    if Manager and not ns.hookedManager then
-        ns.hookedManager = true
-        -- the game hides an alert on SPELL_ACTIVATION_OVERLAY_GLOW_HIDE without going through UpdateSpellAlert
-        hooksecurefunc(Manager, "HideAlert", function(_, btn)
-            local key = glowing[btn]
-            if key and state[key] and not items[btn] then Manager:ShowAlert(btn, true) end
-        end)
-    end
 end
 
 ---------------------------------------------------------------------------
@@ -415,6 +412,9 @@ local function Setup()
     if not ns.viewersHooked then f:RegisterEvent("ADDON_LOADED") end -- Blizzard_CooldownViewer may load later
     f:RegisterEvent("SPELLS_CHANGED")
     f:RegisterEvent("PLAYER_ENTERING_WORLD")
+    -- the game shows and hides its own glow on these without going through the buttons' UpdateSpellAlert
+    pcall(f.RegisterEvent, f, "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+    pcall(f.RegisterEvent, f, "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
     local wantUsable, wantCombat, wantHealth, wantAura, wantCreature = false, false, false, false, false
     for _, def in ipairs(tracked) do
         wantUsable = wantUsable or def.usable or false
@@ -435,8 +435,9 @@ local function Setup()
         f:RegisterUnitEvent("UNIT_HEALTH", "target")
         f:RegisterEvent("PLAYER_TARGET_CHANGED")
     end
-    if wantCreature then f:RegisterEvent("SPELL_UPDATE_COOLDOWN") end
+    if #tracked > 0 then f:RegisterEvent("SPELL_UPDATE_COOLDOWN") end
     if wantAura then f:RegisterUnitEvent("UNIT_AURA", "player") end
+    CheckCooldowns()
     if wantUsable then CheckUsable() end
     if wantHealth then CheckHealth() end
     if wantCreature then CheckCreature() end
@@ -468,7 +469,11 @@ f:SetScript("OnEvent", function(self, event, ...)
         Setup()
     elseif event == "SPELL_UPDATE_USABLE" then
         CheckUsable()
+        CheckCooldowns()
+    elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" or event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
+        RefreshButtons()
     elseif event == "PLAYER_TARGET_CHANGED" then
+        CheckCooldowns()
         CheckUsable()
         CheckHealth()
         CheckCreature()
@@ -476,7 +481,7 @@ f:SetScript("OnEvent", function(self, event, ...)
         CheckHealth()
         CheckCreature()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
-        CheckCreature()
+        CheckCooldowns()
     elseif event == "UNIT_AURA" then
         CheckAuras()
     elseif event == "UNIT_COMBAT" then
@@ -519,6 +524,7 @@ function ns.Status()
         if def.health then how[#how + 1] = "health=" .. tostring(s.health) end
         if def.aura then how[#how + 1] = "aura=" .. tostring(s.aura) end
         if def.creature then how[#how + 1] = "creature=" .. tostring(s.creature) end
+        if s.cooldown then how[#how + 1] = "on cooldown" end
         print(("  %s%s: %s (%s)"):format(def.localName, Enabled(def) and "" or " [off]",
             state[def.key] and "|cff40ff40glowing|r" or "dark", table.concat(how, ", ")))
     end
@@ -528,7 +534,6 @@ ns.internals = {
     db = function() return db end,
     buttons = buttons,
     glowing = glowing,
-    items = items,
     ownAlerts = ownAlerts,
     SetupCooldownViewers = SetupCooldownViewers,
     byName = byName,

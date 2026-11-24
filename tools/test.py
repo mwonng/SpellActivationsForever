@@ -49,8 +49,25 @@ class Base(unittest.TestCase):
         self.stub.actions[slot] = self.lua.table("spell", spell_id)
         self.button(slot).UpdateSpellAlert(self.button(slot))
 
+    def lit(self, frame):
+        # the addon's own alert frame on a button or Cooldown Manager item
+        alert = self.ns.internals.ownAlerts[frame]
+        return bool(alert) and bool(alert.IsShown(alert))
+
     def glowing(self, i):
+        return self.lit(self.button(i))
+
+    def game_glow(self, i):
         return bool(self.stub.alerts[self.button(i)])
+
+    def tearDown(self):
+        # the game's alert manager writes on the frame: called from addon code it taints the action bars
+        for call in self.stub.alertCalls.values():
+            self.assertTrue(call[4], "ActionButtonSpellAlertManager was called from addon code")
+
+    def cooldown(self, name, start, duration, active=None, on_gcd=None):
+        self.stub.cooldowns[name] = self.lua.table(start, duration, active, on_gcd)
+        self.stub.Fire("SPELL_UPDATE_COOLDOWN")
 
     def state(self, key):
         return bool(self.ns.state[key])
@@ -107,6 +124,18 @@ class UsableMode(Base):
         self.assertTrue(self.glowing(1))
         self.assertTrue(self.glowing(2))
         self.assertTrue(self.glowing(3))
+
+    def test_victory_rush_follows_the_usable_flag(self):
+        self.known = (11585, 402927)
+        self.setUp()
+        self.assertEqual(self.tracked_keys(), ["Overpower", "VictoryRush"])
+        self.put_spell(1, 402927)
+        self.usable("Victory Rush", True)
+        self.assertTrue(self.glowing(1))
+        self.slash("mode events")  # no event source of its own: the flag is all there is
+        self.assertTrue(self.glowing(1))
+        self.usable("Victory Rush", False)
+        self.assertFalse(self.glowing(1))
 
     def test_other_spells_untouched(self):
         self.put_spell(4, 772)  # Rend
@@ -209,14 +238,40 @@ class Buttons(Base):
         self.put_spell(5, 11585)
         self.assertTrue(self.glowing(5))
 
-    def test_games_own_hide_is_reapplied(self):
+    def test_glow_is_the_addons_own_frame(self):
+        button = self.button(1)
+        button.tag = "me"
+        keys_before = set(button.keys())
         self.put_spell(1, 11585)
         self.usable("Overpower", True)
-        self.G.ActionButtonSpellAlertManager.HideAlert(self.G.ActionButtonSpellAlertManager, self.button(1))
         self.assertTrue(self.glowing(1))
-        calls = list(self.stub.alertCalls.values())
-        self.assertEqual([c[1] for c in calls], ["show", "hide", "show"])
-        self.assertTrue(calls[-1][3], "re-apply skips the birth animation")
+        alert = self.ns.internals.ownAlerts[button]
+        self.assertEqual(alert.template, "ActionButtonSpellAlertTemplate")
+        self.assertEqual(alert.parent.tag, "me")
+        self.assertEqual((alert.w, alert.h), (56, 56))
+        self.assertTrue(alert.ProcLoop.IsPlaying(alert.ProcLoop), "loop animation runs after the birth one")
+        self.usable("Overpower", False)
+        self.assertFalse(self.glowing(1))
+        self.assertEqual(set(button.keys()), keys_before, "nothing is written on the button")
+        self.assertFalse(self.game_glow(1))
+
+    def test_games_update_leaves_our_glow(self):
+        self.put_spell(1, 11585)
+        self.usable("Overpower", True)
+        self.button(1).UpdateSpellAlert(self.button(1))  # the game hides its own alert; ours stays
+        self.assertTrue(self.glowing(1))
+
+    def test_games_own_glow_is_not_doubled(self):
+        self.put_spell(1, 11585)
+        self.stub.GameOverlay(11585, True)
+        self.usable("Overpower", True)
+        self.assertTrue(self.game_glow(1))
+        self.assertFalse(self.glowing(1), "no second glow on top of the game's")
+        self.stub.GameOverlay(11585, False)  # the game takes its glow away; ours takes over
+        self.assertFalse(self.game_glow(1))
+        self.assertTrue(self.glowing(1))
+        self.stub.GameOverlay(11585, True)
+        self.assertFalse(self.glowing(1))
 
     def test_games_own_glow_is_kept_when_ours_ends(self):
         self.put_spell(1, 11585)
@@ -224,7 +279,8 @@ class Buttons(Base):
         self.button(1).UpdateSpellAlert(self.button(1))
         self.usable("Overpower", True)
         self.usable("Overpower", False)
-        self.assertTrue(self.glowing(1))
+        self.assertTrue(self.game_glow(1))
+        self.assertFalse(self.glowing(1))
 
     def test_disabled_ability_does_not_glow(self):
         self.put_spell(1, 11585)
@@ -259,16 +315,6 @@ class CooldownManager(Base):
     def add_item(self, spell_id, viewer="EssentialCooldownViewer"):
         v = self.viewer(viewer)
         return v.AddItem(v, spell_id)
-
-    def lit(self, item):
-        # the addon's own alert frame on the item (the game's manager must never be used on items)
-        alert = self.ns.internals.ownAlerts[item]
-        return bool(alert) and bool(alert.IsShown(alert))
-
-    def tearDown(self):
-        for call in self.stub.alertCalls.values():
-            if call[2].RefreshOverlayGlow is not None:  # a Cooldown Manager item
-                self.assertTrue(call[4], "ActionButtonSpellAlertManager was called with an item from addon code")
 
     def test_item_glows_with_the_ability(self):
         item = self.add_item(11585)
@@ -414,6 +460,70 @@ class Paladin(Base):
         self.put_spell(2, 24275)
         self.usable("Hammer of Wrath", True)
         self.assertTrue(self.glowing(2))
+
+    def test_hammer_of_wrath_dark_while_on_cooldown(self):
+        # the target stays below 20%, so the usable flag stays on after the cast
+        self.put_spell(2, 24275)
+        self.usable("Hammer of Wrath", True)
+        self.cooldown("Hammer of Wrath", 0, 6)
+        self.assertFalse(self.glowing(2))
+        self.stub.Advance(6.1)  # no event needed: a timer re-checks when the cooldown ends
+        self.assertTrue(self.glowing(2))
+
+
+class Cooldown(Base):
+    def test_global_cooldown_does_not_hide_the_glow(self):
+        self.put_spell(1, 11585)
+        self.usable("Overpower", True)
+        self.cooldown("Overpower", 0, 1.5)
+        self.assertTrue(self.glowing(1))
+
+    def test_finished_cooldown_does_not_hide_the_glow(self):
+        self.put_spell(1, 11585)
+        self.stub.Advance(10)
+        self.usable("Overpower", True)
+        self.cooldown("Overpower", 2, 5)
+        self.assertTrue(self.glowing(1))
+
+    def test_hidden_timings_use_the_flags(self):
+        self.put_spell(1, 11585)
+        self.usable("Overpower", True)
+        secret = self.stub.Secret
+        self.cooldown("Overpower", secret("start"), secret("duration"), True, False)
+        self.assertFalse(self.glowing(1))
+        self.cooldown("Overpower", secret("start"), secret("duration"), True, True)  # only the global cooldown
+        self.assertTrue(self.glowing(1))
+        self.cooldown("Overpower", secret("start"), secret("duration"), False, False)
+        self.assertTrue(self.glowing(1))
+
+    def test_hidden_timings_without_flags_change_nothing(self):
+        self.put_spell(1, 11585)
+        self.usable("Overpower", True)
+        secret = self.stub.Secret
+        self.cooldown("Overpower", secret("start"), secret("duration"))
+        self.assertTrue(self.glowing(1))
+        self.cooldown("Overpower", secret("start"), secret("duration"), secret("active"), secret("gcd"))
+        self.assertTrue(self.glowing(1))
+
+    def test_window_ends_with_the_cooldown_when_the_cast_id_is_hidden(self):
+        self.slash("mode events")
+        self.put_spell(1, 11585)
+        self.stub.Fire("UNIT_COMBAT", "target", "DODGE", "", 0, 1)
+        self.assertTrue(self.glowing(1))
+        self.stub.Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", self.stub.Secret("spell"))
+        self.cooldown("Overpower", 0, 5)
+        self.assertFalse(self.glowing(1))
+
+    def test_test_command_ignores_the_cooldown(self):
+        self.put_spell(1, 11585)
+        self.cooldown("Overpower", 0, 5)
+        self.slash("test 2")
+        self.assertTrue(self.glowing(1))
+
+    def test_status_names_the_cooldown(self):
+        self.cooldown("Overpower", 0, 5)
+        self.slash("status")
+        self.assertIn("on cooldown", "\n".join(self.stub.printed.values()))
 
 
 class Warlock(Base):

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Action bars no longer break (bars disappearing, missing tooltips, wrong cooldowns): the glow on action
+  buttons is now the addon's own frame, like on the Cooldown Manager icons, and the game's alert manager is
+  never called from the addon, which tainted the buttons. Thanks to Painwatcher for the patch.
+- An ability no longer glows while it is on a cooldown of its own (the global cooldown does not count).
+- Victory Rush glows while it is usable.
+
 ## 0.2.1 — 2026-10-22
 
 - Icon in the AddOns list (Execute's sword).

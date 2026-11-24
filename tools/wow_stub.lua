@@ -8,7 +8,7 @@ local stub = {
     names = {},      -- [spellID] = name (C_Spell.GetSpellName); filled below
     bookNames = {},  -- [name] = true: C_Spell.GetSpellInfo(name) finds it
     usable = {},     -- [name] = { usable, noPower }
-    cooldowns = {},  -- [name] = { startTime, duration }
+    cooldowns = {},  -- [name] = { startTime, duration, isActive, isOnGCD } (C_Spell.GetSpellCooldown)
     auras = {},      -- [spellID] = true on the player
     target = nil,    -- { friend, dead, health, healthMax, creature }
     overlayed = {},  -- [spellID] = true: C_SpellActivationOverlay.IsSpellOverlayed
@@ -18,7 +18,7 @@ local stub = {
     frames = {},
     timers = {},
     alerts = {},     -- [button] = true while ActionButtonSpellAlertManager shows an alert
-    alertCalls = {}, -- { "show"/"hide", button, skipBirth, fromGame }
+    alertCalls = {}, -- { "show"/"hide", button, skipBirth, fromGame }: fromGame false = called by the addon
     viewers = {},    -- [name] = Cooldown Manager viewer frame (also a global)
 }
 
@@ -26,6 +26,7 @@ local SPELL_NAMES = {
     [11585] = "Overpower", [11584] = "Overpower", [7887] = "Overpower", [7384] = "Overpower",
     [11601] = "Revenge", [11600] = "Revenge", [7379] = "Revenge", [6574] = "Revenge", [6572] = "Revenge",
     [20662] = "Execute", [20661] = "Execute", [20660] = "Execute", [20658] = "Execute", [5308] = "Execute",
+    [402927] = "Victory Rush",
     [14251] = "Riposte",
     [20910] = "Counterattack", [20909] = "Counterattack", [19306] = "Counterattack",
     [14271] = "Mongoose Bite", [14270] = "Mongoose Bite", [14269] = "Mongoose Bite", [1495] = "Mongoose Bite",
@@ -174,21 +175,39 @@ function GetMacroSpell(id) return stub.macroSpells[id] end
 local ButtonMixin = {}
 function ButtonMixin:UpdateSpellAlert()
     local kind, id = GetActionInfo(self.action)
+    stub.inGameCode = true -- the game's own (secure) call; the addon must never make one
     if (kind == "spell" or kind == "macro") and C_SpellActivationOverlay.IsSpellOverlayed(id) then
         ActionButtonSpellAlertManager:ShowAlert(self)
     else
         ActionButtonSpellAlertManager:HideAlert(self)
     end
+    stub.inGameCode = false
 end
 for i = 1, 12 do
     local b = CreateFrame("CheckButton", "ActionButton" .. i, UIParent)
     b.action = i
+    b:SetSize(40, 40)
     b.UpdateSpellAlert = ButtonMixin.UpdateSpellAlert
 end
 for i = 1, 12 do
     local b = CreateFrame("CheckButton", "MultiBarBottomLeftButton" .. i, UIParent)
     b.action = 60 + i
+    b:SetSize(40, 40)
     b.UpdateSpellAlert = ButtonMixin.UpdateSpellAlert
+end
+-- SPELL_ACTIVATION_OVERLAY_GLOW_SHOW/HIDE: the game changes its glow without running UpdateSpellAlert
+function stub.GameOverlay(spellID, on)
+    stub.overlayed[spellID] = on or nil
+    stub.inGameCode = true
+    for _, f in ipairs(stub.frames) do
+        local kind, id = nil, nil
+        if f.action then kind, id = GetActionInfo(f.action) end
+        if kind == "spell" and id == spellID then
+            if on then ActionButtonSpellAlertManager:ShowAlert(f) else ActionButtonSpellAlertManager:HideAlert(f) end
+        end
+    end
+    stub.inGameCode = false
+    stub.Fire(on and "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" or "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", spellID)
 end
 
 -- The Cooldown Manager (Blizzard_CooldownViewer): the Essential/Utility viewers acquire item frames from a
@@ -292,7 +311,8 @@ C_Spell = {
     end,
     GetSpellCooldown = function(name)
         local cd = stub.cooldowns[name]
-        return { startTime = cd and cd[1] or 0, duration = cd and cd[2] or 0, isEnabled = true }
+        return { startTime = cd and cd[1] or 0, duration = cd and cd[2] or 0, isEnabled = true,
+                 isActive = cd and cd[3], isOnGCD = cd and cd[4] }
     end,
 }
 function IsPlayerSpell(id) return stub.known[id] == true end

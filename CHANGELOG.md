@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-25
 
 - Action bars no longer break (bars disappearing, missing tooltips, wrong cooldowns): the glow on action
   buttons is now the addon's own frame, like on the Cooldown Manager icons, and the game's alert manager is
